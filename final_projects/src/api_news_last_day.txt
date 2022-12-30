@@ -1,0 +1,101 @@
+-- btl_data.api_news_last_day source
+
+CREATE OR REPLACE VIEW btl_data.api_news_last_day
+AS WITH vedomosti AS (
+         SELECT t2_1.id,
+            t1.pubdate,
+            t1.guid,
+            t1.title,
+            t1.link,
+            t1.pdalink,
+            t1.category
+           FROM dal_data.test_api_news_vedomosti t1
+             JOIN dal_data.test_api_news_category_key t2_1 ON t1.category::text = t2_1.category::text
+        ), lenta AS (
+         SELECT t2_1.id,
+            t1.pubdate,
+            t1.guid,
+            t1.author,
+            t1.title,
+            t1.description,
+            t1.category
+           FROM dal_data.test_api_news_lenta t1
+             JOIN dal_data.test_api_news_category_key t2_1 ON t1.category::text = t2_1.category::text
+        ), total AS (
+         SELECT vedomosti.id,
+            vedomosti.pubdate,
+            vedomosti.title,
+            vedomosti.category
+           FROM vedomosti
+        UNION
+         SELECT lenta.id,
+            lenta.pubdate,
+            lenta.title,
+            lenta.category
+           FROM lenta
+        ), total_day AS (
+         SELECT total.id,
+            total.pubdate,
+            total.category,
+            count(total.category) OVER w AS amount
+           FROM total
+          WINDOW w AS (PARTITION BY total.category, total.pubdate)
+        ), max_day AS (
+         SELECT total_day.id,
+            total_day.pubdate,
+            total_day.category,
+            total_day.amount,
+            max(total_day.amount) OVER w AS maximum
+           FROM total_day
+          GROUP BY total_day.pubdate, total_day.amount, total_day.category, total_day.id
+          WINDOW w AS (PARTITION BY total_day.category)
+        ), avg_day AS (
+         SELECT total.id,
+            total.pubdate,
+            total.category,
+            count(total.category) AS counter
+           FROM total
+          GROUP BY total.id, total.pubdate, total.category
+        )
+ SELECT t2.id,
+    t2.category,
+    t2.amount,
+    t2.theme
+   FROM ( SELECT total.id,
+            total.category,
+            count(total.category) OVER w::text AS amount,
+            'Общее количество новостей из всех источников по данной категории за последнии сутки'::text AS theme
+           FROM total
+          WHERE total.pubdate >= (now()::date - 1)
+          WINDOW w AS (PARTITION BY total.category)
+        UNION
+         SELECT vedomosti.id,
+            vedomosti.category,
+            count(vedomosti.category) OVER w::text AS amount,
+            'Количество новостей данной категории из Ведомостей за последнии сутки'::text AS theme
+           FROM vedomosti
+          WHERE vedomosti.pubdate >= (now()::date - 1)
+          WINDOW w AS (PARTITION BY vedomosti.category)
+        UNION
+         SELECT lenta.id,
+            lenta.category,
+            count(lenta.category) OVER w::text AS amount,
+            'Количество новостей данной категории из Ленты за последнии сутки'::text AS theme
+           FROM lenta
+          WHERE lenta.pubdate >= (now()::date - 1)
+          WINDOW w AS (PARTITION BY lenta.category)
+        UNION
+         SELECT max_day.id,
+            max_day.category,
+            max_day.pubdate::text AS amount,
+            'День, в который было сделано максимальное количество публикаций по данной категории'::text AS theme
+           FROM max_day
+          WHERE max_day.amount = max_day.maximum
+          GROUP BY max_day.id, max_day.category, max_day.amount, max_day.pubdate, max_day.maximum
+        UNION
+         SELECT avg_day.id,
+            avg_day.category,
+            round(avg(avg_day.counter), 2)::text AS amount,
+            'Среднее количество публикаций по данной категории в сутки'::text AS theme
+           FROM avg_day
+          GROUP BY avg_day.id, avg_day.category) t2;

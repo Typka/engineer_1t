@@ -1,0 +1,48 @@
+-- btl_data.api_news_week_day source
+
+CREATE OR REPLACE VIEW btl_data.api_news_week_day
+AS WITH vedomosti AS (
+         SELECT t2.id,
+            t1.pubdate,
+            t1.guid,
+            t1.title,
+            t1.link,
+            t1.pdalink,
+            t1.category
+           FROM dal_data.test_api_news_vedomosti t1
+             JOIN dal_data.test_api_news_category_key t2 ON t1.category::text = t2.category::text
+        ), lenta AS (
+         SELECT t2.id,
+            t1.pubdate,
+            t1.guid,
+            t1.author,
+            t1.title,
+            t1.description,
+            t1.category
+           FROM dal_data.test_api_news_lenta t1
+             JOIN dal_data.test_api_news_category_key t2 ON t1.category::text = t2.category::text
+        ), total AS (
+         SELECT vedomosti.id,
+            vedomosti.pubdate,
+            vedomosti.title,
+            vedomosti.category
+           FROM vedomosti
+        UNION
+         SELECT lenta.id,
+            lenta.pubdate,
+            lenta.title,
+            lenta.category
+           FROM lenta
+        ), week_day AS (
+         SELECT date_part('dow'::text, total.pubdate)::text AS week_day,
+            total.category,
+            total.id,
+            count(total.category) AS counter
+           FROM total
+          GROUP BY (date_part('dow'::text, total.pubdate)::text), total.category, total.id
+        )
+ SELECT replace(replace(replace(replace(replace(replace(replace(week_day.week_day, '0'::text, 'Воскресенье'::text), '1'::text, 'Понедельник'::text), '2'::text, 'Вторник'::text), '3'::text, 'Среда'::text), '4'::text, 'Четверг'::text), '5'::text, 'Пятница'::text), '6'::text, 'Суббота'::text) AS week_day,
+    week_day.id,
+    week_day.category,
+    week_day.counter
+   FROM week_day;

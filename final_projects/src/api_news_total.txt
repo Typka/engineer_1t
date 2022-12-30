@@ -1,0 +1,60 @@
+-- btl_data.api_news_total source
+
+CREATE OR REPLACE VIEW btl_data.api_news_total
+AS WITH vedomosti AS (
+         SELECT t2_1.id,
+            t1.pubdate,
+            t1.guid,
+            t1.title,
+            t1.link,
+            t1.pdalink,
+            t1.category
+           FROM dal_data.test_api_news_vedomosti t1
+             JOIN dal_data.test_api_news_category_key t2_1 ON t1.category::text = t2_1.category::text
+        ), lenta AS (
+         SELECT t2_1.id,
+            t1.pubdate,
+            t1.guid,
+            t1.author,
+            t1.title,
+            t1.description,
+            t1.category
+           FROM dal_data.test_api_news_lenta t1
+             JOIN dal_data.test_api_news_category_key t2_1 ON t1.category::text = t2_1.category::text
+        ), total AS (
+         SELECT vedomosti.id,
+            vedomosti.pubdate,
+            vedomosti.title,
+            vedomosti.category
+           FROM vedomosti
+        UNION
+         SELECT lenta.id,
+            lenta.pubdate,
+            lenta.title,
+            lenta.category
+           FROM lenta
+        )
+ SELECT t2.id,
+    t2.category,
+    t2.amount,
+    t2.theme
+   FROM ( SELECT total.id,
+            total.category,
+            count(total.category) OVER w AS amount,
+            'Общее количество новостей из всех источников по данной категории за все время'::text AS theme
+           FROM total
+          WINDOW w AS (PARTITION BY total.category)
+        UNION
+         SELECT vedomosti.id,
+            vedomosti.category,
+            count(vedomosti.category) OVER w AS amount,
+            'Количество новостей данной категории из Ведомостей за все время'::text AS theme
+           FROM vedomosti
+          WINDOW w AS (PARTITION BY vedomosti.category)
+        UNION
+         SELECT lenta.id,
+            lenta.category,
+            count(lenta.category) OVER w AS amount,
+            'Количество новостей данной категории из Ленты за все время'::text AS theme
+           FROM lenta
+          WINDOW w AS (PARTITION BY lenta.category)) t2;
